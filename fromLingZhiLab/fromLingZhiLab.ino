@@ -1,10 +1,10 @@
 #include<ESP8266WiFi.h>
 void smartConfig()
 {
-  if(WiFi.status() == WL_CONNECTED)
-  {
-    WiFi.disconnect(false);
-  }
+  //if(WiFi.status() == WL_CONNECTED)
+  //{
+    //WiFi.disconnect(false);//造成第一次连接失败后，以后的连接会使用上次连接失败的密码账号。
+  //}
   WiFi.mode(WIFI_STA);
   Serial.println("waiting for smartconfig");
   delay(2000);
@@ -45,12 +45,13 @@ void setup()
 void loop()
 {
   delay(100);
-  if(WiFi.status() != WL_CONNECTED)
+  if(WiFi.status()!= WL_CONNECTED)
   {
     Serial.println("unconnect");
   }
   else
   {
+    Serial.println(WiFi.localIP());
     Serial.println("smartconfig success");
   }
   Serial.print("read io4 :");
