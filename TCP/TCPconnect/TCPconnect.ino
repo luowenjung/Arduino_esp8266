@@ -1,11 +1,11 @@
 #include<ESP8266WiFi.h>
-void tcp()
-{
-    
-  
-  
-  
-}
+#include<WiFiClient.h>
+
+#define TCP_SERVER_ADDR ""
+#define TCP_SERVER_PORT "8888"
+
+#define updataTime 2*1000
+
 void smartConfig()
 {
   //if(WiFi.status() == WL_CONNECTED)
@@ -56,6 +56,7 @@ void loop()
   }
   else
   {
+    
     Serial.println(WiFi.localIP());
     Serial.println("smartconfig success");
   }
