@@ -1,8 +1,8 @@
 #include<ESP8266WiFi.h>
 #include<WiFiClient.h>
 //需要设置的服务器地址以及端口
-#define TCP_SERVER_ADDR "192.168.0.104"
-#define TCP_SERVER_PORT "8080"
+#define TCP_SERVER_ADDR "47.96.146.251"
+#define TCP_SERVER_PORT "8306"
 //用户私钥，可在控制台获取,修改为自己的UID
 String UID = "esp8266";
 
@@ -15,6 +15,7 @@ int intNumber = 0;
 WiFiClient TCPclient;
 String TcpClient_Buff="";
 unsigned int TcpClient_BuffIndex = 0;
+unsigned long TcpClient_preTick = 0;
 unsigned long preHeartTick = 0;//心跳
 unsigned long predataTick = 0;//数据发送时间
 
@@ -32,6 +33,8 @@ void doTCPClientTick();
 void startTCPClient();
 void sendtoTCPServer(String p);
 
+
+bool p=true;
 //中断里卡太久会溢出。
 void setup()
 {
@@ -44,19 +47,22 @@ void setup()
 }
 void loop()
 {
-  bool p=true;
+  
   //delay(100);
   if(WiFi.status()!= WL_CONNECTED)
   {
     Serial.println("unconnect");
   }
-  else if(p)
+  else 
   {
-    p=false;
-    Serial.println(WiFi.localIP());
-    Serial.println("smartconfig success");
-    Serial.print("read io4 :");
-    Serial.println(digitalRead(4));
+    if(p)
+    {
+      p=false;
+      Serial.println(WiFi.localIP());
+      Serial.println("smartconfig success");
+      Serial.print("read io4 :");
+      Serial.println(digitalRead(4));
+    }
   }
   if(wifi_config)
   {
@@ -160,11 +166,11 @@ void doTCPClientTick()
       char c = TCPclient.read();
       TcpClient_Buff += c;
       TcpClient_BuffIndex ++;
-
+      TcpClient_preTick = millis();
       if(TcpClient_BuffIndex>=MAX_PACKETSIZE-1)
       {
         TcpClient_BuffIndex=MAX_PACKETSIZE-2;
-        
+        TcpClient_preTick=TcpClient_preTick-200;
       }
     }
     
@@ -181,6 +187,8 @@ void doTCPClientTick()
     //上传数据
     if(millis()-predataTick>=upDataTime)
     {
+      predataTick = millis();
+      
       String upstr = "";
       upstr = "cmd=2&uid="+UID+"&msg=hello_i_am_sender"+intNumber+"\r\n";
       intNumber++;
@@ -188,8 +196,9 @@ void doTCPClientTick()
       upstr = "";
       
     }
-  if(TcpClient_Buff.length() >= 1)
+  if((TcpClient_Buff.length() >= 1)&& (millis() - TcpClient_preTick>=200))
   {//data ready
+    TcpClient_preTick = millis();
     TCPclient.flush();
     Serial.println("receive from server in Buff:");
     Serial.println(TcpClient_Buff);
