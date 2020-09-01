@@ -1,8 +1,8 @@
 #include<ESP8266WiFi.h>
 #include<WiFiClient.h>
 //需要设置的服务器地址以及端口
-#define TCP_SERVER_ADDR "47.96.146.251"
-#define TCP_SERVER_PORT "8306"
+#define TCP_SERVER_ADDR "192.168.0.104"
+#define TCP_SERVER_PORT "8080"
 //用户私钥，可在控制台获取,修改为自己的UID
 String UID = "esp8266";
 
@@ -52,6 +52,7 @@ void loop()
   if(WiFi.status()!= WL_CONNECTED)
   {
     Serial.println("unconnect");
+    delay(500);
   }
   else 
   {
@@ -71,7 +72,7 @@ void loop()
     attachInterrupt(digitalPinToInterrupt(4), interrput_io4, FALLING);
   }
   doTCPClientTick();
-  delay(500);
+  delay(10);
 }
 void interrput_io4()
 {
@@ -161,17 +162,20 @@ void doTCPClientTick()
   else
   {
     
-    if(TCPclient.available())//接收
+    if(Serial.available()>0)//接收
     {
-      char c = TCPclient.read();
+      char c = Serial.read();
       TcpClient_Buff += c;
       TcpClient_BuffIndex ++;
+      //Serial.println(TcpClient_Buff);
       TcpClient_preTick = millis();
       if(TcpClient_BuffIndex>=MAX_PACKETSIZE-1)
       {
         TcpClient_BuffIndex=MAX_PACKETSIZE-2;
-        TcpClient_preTick=TcpClient_preTick-200;
+        TcpClient_preTick=TcpClient_preTick-100;
       }
+      preHeartTick = millis();
+      predataTick = millis();
     }
     
     if(millis() - preHeartTick >= upheartTime)
@@ -190,21 +194,22 @@ void doTCPClientTick()
       predataTick = millis();
       
       String upstr = "";
-      upstr = "cmd=2&uid="+UID+"&msg=hello_i_am_sender"+intNumber+"\r\n";
+      upstr = "cmd = 2& uid = "+UID+" &msg = "+intNumber+"\r\n";
       intNumber++;
       sendtoTCPServer(upstr);
       upstr = "";
       
     }
-  if((TcpClient_Buff.length() >= 1)&& (millis() - TcpClient_preTick>=200))
+  if((TcpClient_Buff.length() >= 1)&& (millis() - TcpClient_preTick>=100))
   {//data ready
     TcpClient_preTick = millis();
+    
     TCPclient.flush();
-    Serial.println("receive from server in Buff:");
+    Serial.println("receive from zigbee in Buff:");
     Serial.println(TcpClient_Buff);
-
-   TcpClient_Buff="";
-   TcpClient_BuffIndex = 0;
+    sendtoTCPServer(TcpClient_Buff);
+    TcpClient_Buff="";
+    TcpClient_BuffIndex = 0;
   }
   }
 }
