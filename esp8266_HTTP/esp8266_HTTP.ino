@@ -1,14 +1,13 @@
 #include<ESP8266WiFi.h>
 #include<WiFiClient.h>
+#include <ESP8266HTTPClient.h>
 //需要设置的服务器地址以及端口
-#define TCP_SERVER_ADDR "47.96.146.251"
-#define TCP_SERVER_PORT "8306"
+#define SERVER_ADDR "http://www.lingzhilab.com/resources/getAllResPage"
+#define SERVER_PORT "80"
 //用户私钥，可在控制台获取,修改为自己的UID
 String UID = "esp8266";
 
-#define debug false
-
-#define upDataTime 2*1000
+#define httpTime 2*1000
 //设置心跳
 #define upheartTime 30*1000
 int intNumber = 0;
@@ -20,7 +19,7 @@ unsigned int TcpClient_BuffIndex = 0;
 unsigned long TcpClient_preTick = 0;
 unsigned long preHeartTick = 0;//心跳
 unsigned long predataTick = 0;//数据发送时间
-
+unsigned long getinterval=0;
 //最大字节数
 #define MAX_PACKETSIZE 512
 
@@ -35,22 +34,17 @@ void doTCPClientTick();
 void startTCPClient();
 void sendtoTCPServer(String p);
 
-
-bool p=true;
-//中断里卡太久会溢出。
-void setup()
-{
+void setup() {
+  // put your setup code here, to run once:
   Serial.begin(115200);
   //pinMode(4,INPUT);
   pinMode(4, INPUT);
   //attachInterrupt(4, smartConfig, CHANGE);//当int.0电平改变时,触发中断函数blink
   attachInterrupt(digitalPinToInterrupt(4), interrput_io4, FALLING);
-  //smartConfig();  
 }
-void loop()
-{
-  
-  //delay(100);
+bool p=true;
+void loop() {
+  // put your main code here, to run repeatedly:
   if(WiFi.status()!= WL_CONNECTED)
   {
     Serial.println("unconnect");
@@ -63,6 +57,8 @@ void loop()
       p=false;
       Serial.println(WiFi.localIP());
       Serial.println("smartconfig success");
+      Serial.printf("SSID:%s\r\n", WiFi.SSID().c_str());
+      Serial.printf("PSW:%s\r\n", WiFi.psk().c_str());
       Serial.print("read io4 :");
       Serial.println(digitalRead(4));
     }
@@ -73,9 +69,11 @@ void loop()
     smartConfig();
     attachInterrupt(digitalPinToInterrupt(4), interrput_io4, FALLING);
   }
-  doTCPClientTick();
+  doHTTPget();
+  //Serial.print(".");
   delay(10);
 }
+
 void interrput_io4()
 {
     Serial.print("Enter the interrput digitalPinToInterrupt(4)");
@@ -89,13 +87,13 @@ void smartConfig()
   //{
     //WiFi.disconnect(false);//造成第一次连接失败后，以后的连接会使用上次连接失败的密码账号。
   //}
-  delay(1000);
+  delay(500);
   int count=0;
   //持续3秒低电平
   if(!digitalRead(4)){
-    while(count>=40)
+    while(count<=5)
     {
-      delay(100);
+      delay(500);
       if(digitalRead(4))
         {
           Serial.println("less than 3 second");
@@ -140,90 +138,22 @@ void smartConfig()
   p=true;
   //digitalWrite(4,HIGH);
 }
-void startTCPClient(){
-  if(TCPclient.connect(TCP_SERVER_ADDR,atoi(TCP_SERVER_PORT)))
-    {
-      Serial.print("\nConnected to server:");
-      Serial.print(TCP_SERVER_ADDR);
-    }
-    else
-    {
-      Serial.print("\nFailed connected to server:");
-      Serial.print(TCP_SERVER_ADDR);
-      TCPclient.stop();
-    }
-  }
-void doTCPClientTick()
+void doHTTPget()
 {
-  if(WiFi.status()!=WL_CONNECTED) return;
-  if(!TCPclient.connected())
-  {
-    TCPclient.stop();
-    //这里需要添加一个重新连接的时间周期。
-    startTCPClient();
-  }
-  else
-  {
-    
-    if(Serial.available()>0)//接收
-    {
-      char c = Serial.read();
-      TcpClient_Buff += c;
-      TcpClient_BuffIndex ++;
-      //Serial.println(TcpClient_Buff);
-      TcpClient_preTick = millis();
-      if(TcpClient_BuffIndex>=MAX_PACKETSIZE-1)
-      {
-        TcpClient_BuffIndex=MAX_PACKETSIZE-2;
-        TcpClient_preTick=TcpClient_preTick-100;
+  if(millis() - getinterval > httpTime){
+    if(WiFi.status() != WL_CONNECTED) return;
+    HTTPClient http;
+    http.begin(SERVER_ADDR);
+    int httpResponseCode = http.POST(SERVER_ADDR);
+    Serial.print("HTTP response code :");
+    Serial.println(httpResponseCode);
+    if(httpResponseCode > 0){
+        //Serial.print("HTTP response code :");
+        //Serial.println(httpResponseCode);
+        String payload = http.getString();
+        Serial.println(payload);
       }
-      preHeartTick = millis();
-      predataTick = millis();
-    }
-    
-    if(millis() - preHeartTick >= upheartTime)
-    {//发送心跳
-      preHeartTick = millis();
-      
-      String upstr = "";
-      upstr = "cmd=0&msg=ping\r\n";
-      intNumber++;
-      sendtoTCPServer(upstr);
-      upstr = "";
-    }
-    //上传数据
-    if(millis()-predataTick>=upDataTime && debug==true)
-    {
-      predataTick = millis();
-      
-      String upstr = "";
-      upstr = "cmd = 2& uid = "+UID+" &msg = "+intNumber+"\r\n";
-      intNumber++;
-      sendtoTCPServer(upstr);
-      upstr = "";
-      
-    }
-  if((TcpClient_Buff.length() >= 1)&& (millis() - TcpClient_preTick>=100))
-  {//data ready
-    TcpClient_preTick = millis();
-    
-    TCPclient.flush();
-    Serial.println("receive from zigbee in Buff:");
-    Serial.println(TcpClient_Buff);
-    sendtoTCPServer(TcpClient_Buff);//将收到的报文送给服务器。
-    TcpClient_Buff="";
-    TcpClient_BuffIndex = 0;
+    http.end();//free resources
+    getinterval=millis();
   }
-  }
-}
-void sendtoTCPServer(String p){
-  
-  if (!TCPclient.connected()) 
-  {
-    Serial.println("Client is not readly");
-    return;
-  }
-  TCPclient.print(p);
-  Serial.println("[Send to TCPServer]:String");
-  Serial.println(p);
 }
