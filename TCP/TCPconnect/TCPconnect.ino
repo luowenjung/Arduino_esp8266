@@ -2,6 +2,7 @@
 #include<WiFiClient.h>
 //需要设置的服务器地址以及端口
 #define TCP_SERVER_ADDR "47.96.146.251"
+//#define TCP_SERVER_ADDR "192.168.1.108"
 #define TCP_SERVER_PORT "8306"
 //用户私钥，可在控制台获取,修改为自己的UID
 String UID = "esp8266";
@@ -15,7 +16,7 @@ int intNumber = 0;
 
 //TCP客户端初始化
 WiFiClient TCPclient;
-String TcpClient_Buff="";
+uint8_t TcpClient_Buff[512];
 unsigned int TcpClient_BuffIndex = 0;
 unsigned long TcpClient_preTick = 0;
 unsigned long preHeartTick = 0;//心跳
@@ -34,7 +35,7 @@ void interrput_io4();
 void doTCPClientTick();
 void startTCPClient();
 void sendtoTCPServer(String p);
-
+void seneUINT8toTCPServer(uint8_t *p);
 
 bool p=true;
 //中断里卡太久会溢出。
@@ -150,6 +151,8 @@ void startTCPClient(){
     {
       Serial.print("\nFailed connected to server:");
       Serial.print(TCP_SERVER_ADDR);
+      Serial.print("\nPORT :");
+      Serial.print(TCP_SERVER_PORT);
       TCPclient.stop();
     }
   }
@@ -167,8 +170,8 @@ void doTCPClientTick()
     
     if(Serial.available()>0)//接收
     {
-      char c = Serial.read();
-      TcpClient_Buff += c;
+      uint8_t c = Serial.read();
+      TcpClient_Buff[TcpClient_BuffIndex] = c;
       TcpClient_BuffIndex ++;
       //Serial.println(TcpClient_Buff);
       TcpClient_preTick = millis();
@@ -203,19 +206,37 @@ void doTCPClientTick()
       upstr = "";
       
     }
-  if((TcpClient_Buff.length() >= 1)&& (millis() - TcpClient_preTick>=100))
+  if((TcpClient_BuffIndex >= 1)&& (millis() - TcpClient_preTick>=100))
   {//data ready
     TcpClient_preTick = millis();
     
     TCPclient.flush();
     Serial.println("receive from zigbee in Buff:");
-    Serial.println(TcpClient_Buff);
-    sendtoTCPServer(TcpClient_Buff);//将收到的报文送给服务器。
-    TcpClient_Buff="";
+    //Serial.println("%s",TcpClient_Buff);
+    seneUINT8toTCPServer(TcpClient_Buff);//将收到的报文送给服务器。
+    //TcpClient_Buff="";
     TcpClient_BuffIndex = 0;
   }
   }
 }
+void seneUINT8toTCPServer(uint8_t *p)
+{
+  if (!TCPclient.connected()) 
+  {
+    Serial.println("Client is not readly");
+    return;
+  }
+  for(int i = 0;i < TcpClient_BuffIndex - 3 ; i++)
+  {
+    TCPclient.print(p[i]);
+    TCPclient.print(',');
+    Serial.print(p[i]);
+    Serial.print(' ');
+    p[i]=0;
+  }
+  Serial.println();
+}
+
 void sendtoTCPServer(String p){
   
   if (!TCPclient.connected()) 
