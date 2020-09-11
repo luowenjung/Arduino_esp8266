@@ -47,13 +47,18 @@ void smartConfig()
   //{
     //WiFi.disconnect(false);//造成第一次连接失败后，以后的连接会使用上次连接失败的密码账号。
   //}
-  delay(1000);
+  
+  delay(500);//消抖
   int count=0;
   //持续3秒低电平
+  Serial.print("enter 3s read io4 :");
+  Serial.println(digitalRead(4));
   if(!digitalRead(4)){
-    while(count>=40)
+    while(count<2)
     {
-      delay(100);
+      Serial.print("read io4 :");
+      Serial.println(digitalRead(4));
+      delay(1000);
       if(digitalRead(4))
         {
           Serial.println("less than 3 second");
@@ -63,11 +68,18 @@ void smartConfig()
         ++count;
     }
   }
+  else
+  {
+    Serial.println("less than 3 second");
+    wifi_config=false;
+    return;
+  }
+  
   Serial.println("enter smartconfig mode!");
   WiFi.mode(WIFI_STA);
   Serial.println("waiting for smartconfig");
   
-  //delay(2000);
+  delay(100);//消抖
   WiFi.beginSmartConfig();
   while(1)
   {
