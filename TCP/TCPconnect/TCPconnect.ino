@@ -1,15 +1,14 @@
 #include<ESP8266WiFi.h>
 #include<WiFiClient.h>
+
 //需要设置的服务器地址以及端口
 #define TCP_SERVER_ADDR "47.96.146.251"
 //#define TCP_SERVER_ADDR "192.168.1.108"
 #define TCP_SERVER_PORT "8306"
-//用户私钥，可在控制台获取,修改为自己的UID
-String UID = "esp8266";
 
-#define debug false
+#define debug false //上传自增数据
+#define upDataTime 2*1000 //上传自增数据周期
 
-#define upDataTime 2*1000
 //设置心跳
 #define upheartTime 30*1000
 int intNumber = 0;
@@ -25,20 +24,55 @@ unsigned long predataTick = 0;//数据发送时间
 //最大字节数
 #define MAX_PACKETSIZE 512
 
+//Wi-Fi中断配置
 void ICACHE_RAM_ATTR interrput_io4();
 bool wifi_config=false;
 
 //函数声明
 void smartConfig();
 void interrput_io4();
+
 //TCP初始化连接
 void doTCPClientTick();
 void startTCPClient();
 void sendtoTCPServer(String p);
-void seneUINT8toTCPServer(uint8_t *p);
+void sendUINT8toTCPServer(uint8_t *p);
+void sendJsontoTCPServer(char *p);
+bool WL_info=true;//用于输出连接路由信息
 
-bool p=true;
-//中断里卡太久会溢出。
+
+/*  
+ *   声明
+ *  报文匹配  
+ *  循环队列  
+*/
+char uploadjson[128];
+#define MessageLen 15  //规定报文长度。
+
+#define BuffLen 1024
+struct Queue
+{
+  uint8_t Buff[BuffLen];
+  int front;
+  int rear;
+}gatawayBuff;
+
+struct json
+{
+  int ID;
+  float data[3];
+  } uploadData;
+
+//循环队列操作声明
+void InitQueue(struct Queue *p);
+short IsFull(struct Queue *p);
+short IsEmpty(struct Queue *p);
+short EnterQueue(struct Queue *p,uint8_t key);
+short DeQueue(struct Queue *p,uint8_t *value);
+
+//报文处理
+void sortAmessage(struct Queue *p);
+
 void setup()
 {
   Serial.begin(115200);
@@ -59,9 +93,9 @@ void loop()
   }
   else 
   {
-    if(p)
+    if(WL_info)
     {
-      p=false;
+      WL_info=false;
       Serial.println(WiFi.localIP());
       Serial.println("smartconfig success");
       Serial.print("read io4 :");
@@ -138,7 +172,7 @@ void smartConfig()
   Serial.println(WiFi.localIP());
   WiFi.stopSmartConfig(); //向手机反馈连接成功
   wifi_config=false;
-  p=true;
+  WL_info=true;
   //digitalWrite(4,HIGH);
 }
 void startTCPClient(){
@@ -167,25 +201,28 @@ void doTCPClientTick()
   }
   else
   {
-    
     if(Serial.available()>0)//接收
     {
-      uint8_t c = Serial.read();
-      TcpClient_Buff[TcpClient_BuffIndex] = c;
-      TcpClient_BuffIndex ++;
-      //Serial.println(TcpClient_Buff);
-      TcpClient_preTick = millis();
-      if(TcpClient_BuffIndex>=MAX_PACKETSIZE-1)
+      uint8_t u8=Serial.read();
+      if(debug)
       {
-        TcpClient_BuffIndex=MAX_PACKETSIZE-2;
-        TcpClient_preTick=TcpClient_preTick-100;
+        Serial.print("read a data from Serial : ");
+        Serial.println(u8);
       }
+      if(!EnterQueue(&gatawayBuff,u8))
+      {
+        Serial.println("Full!!!!!");
+        predataTick=predataTick-100;
+      }
+
+      TcpClient_preTick = millis();
       preHeartTick = millis();
       predataTick = millis();
     }
     
+    //发送心跳
     if(millis() - preHeartTick >= upheartTime)
-    {//发送心跳
+    {
       preHeartTick = millis();
       
       String upstr = "";
@@ -194,32 +231,44 @@ void doTCPClientTick()
       sendtoTCPServer(upstr);
       upstr = "";
     }
-    //上传数据
+    
+    //上传自增数据
+    
     if(millis()-predataTick>=upDataTime && debug==true)
     {
       predataTick = millis();
       
       String upstr = "";
-      upstr = "cmd = 2& uid = "+UID+" &msg = "+intNumber+"\r\n";
+      //upstr = "&msg = "+intNumber+"\r\n";
       intNumber++;
       sendtoTCPServer(upstr);
       upstr = "";
       
     }
-  if((TcpClient_BuffIndex >= 1)&& (millis() - TcpClient_preTick>=100))
-  {//data ready
-    TcpClient_preTick = millis();
-    
-    TCPclient.flush();
-    Serial.println("receive from zigbee in Buff:");
-    //Serial.println("%s",TcpClient_Buff);
-    seneUINT8toTCPServer(TcpClient_Buff);//将收到的报文送给服务器。
-    //TcpClient_Buff="";
-    TcpClient_BuffIndex = 0;
-  }
+
+    //服务器通信
+    if((!IsEmpty(&gatawayBuff))&& (millis()-predataTick>100))
+    {
+      sortAmessage(&gatawayBuff);
+      
+      predataTick=millis();
+    }
+    /*
+    if((TcpClient_BuffIndex >= 1)&& (millis() - TcpClient_preTick>=100))
+    {//data ready
+      TcpClient_preTick = millis();
+      
+      TCPclient.flush();
+      Serial.println("receive from zigbee in Buff:");
+      //Serial.println("%s",TcpClient_Buff);
+      sendUINT8toTCPServer(TcpClient_Buff);//将收到的报文送给服务器。
+      //TcpClient_Buff="";
+      TcpClient_BuffIndex = 0;
+    }
+    */
   }
 }
-void seneUINT8toTCPServer(uint8_t *p)
+void sendUINT8toTCPServer(uint8_t *p)
 {
   if (!TCPclient.connected()) 
   {
@@ -237,6 +286,18 @@ void seneUINT8toTCPServer(uint8_t *p)
   Serial.println();
 }
 
+void sendJsontoTCPServer(char *p){
+  
+  if (!TCPclient.connected()) 
+  {
+    Serial.println("Client is not readly");
+    return;
+  }
+  TCPclient.print(p);
+  Serial.println("[Send to TCPServer]:String");
+  Serial.println(p);
+}
+
 void sendtoTCPServer(String p){
   
   if (!TCPclient.connected()) 
@@ -247,4 +308,109 @@ void sendtoTCPServer(String p){
   TCPclient.print(p);
   Serial.println("[Send to TCPServer]:String");
   Serial.println(p);
+}
+
+
+/*
+ * 以下是循环队列的操作
+ * 报文识别函数的源代码
+ */
+
+//初始化队列
+void InitQueue(struct Queue *p)
+{
+  p->front=0;
+  p->rear=0;
+}
+
+short IsFull(struct Queue *p)
+{
+  if(p->front==(p->rear+1)%BuffLen)
+  {
+    return 1;
+  }
+  else return 0;
+}
+
+short IsEmpty(struct Queue *p)
+{
+  if (p->front==p->rear) return 1;
+  else return 0;  
+}
+short EnterQueue(struct Queue *p,uint8_t key)
+{
+  if(IsFull(p)) return 0;
+  p->Buff[p->rear]=key;
+  p->rear=(p->rear+1)%BuffLen;
+  return 1;
+}
+short DeQueue(struct Queue *p,uint8_t *value)
+{
+  if(IsEmpty(p)) return 0;
+  *value=p->Buff[p->front];
+  p->front=(p->front+1)%BuffLen;
+  return 1;
+}
+
+/*
+ * 报文整理
+ */
+void sortAmessage(struct Queue *p)
+{
+  uint8_t value, DataValue[12];
+  while(!IsEmpty(p)) 
+  {
+    DeQueue(p,&value);
+    if(debug)
+    {
+      Serial.print("DeQueue a data : ");
+      Serial.println(value);
+    }
+    if (value==0xFE)//fing 0xFE of message
+    {
+          if(debug)Serial.println("yes");
+
+      if(p->Buff[(p->front+MessageLen) % BuffLen ]==0xFF)//精确定位
+      {
+        Serial.println("find the end of message!!"); 
+        DeQueue(p,&value);
+        uploadData.ID=value;
+        for(int i = 0;i < MessageLen - 3; i++) 
+        {
+          DeQueue(p,&value);
+          DataValue[i]=value;
+        }
+        memcpy(&uploadData.data, DataValue, MessageLen - 3);
+
+        sprintf(uploadjson,"{ \"ID\":%u,\"Humiture\":%f,\"Light\":%f,\"Temperature\":%f}"
+        ,uploadData.ID,uploadData.data[0],uploadData.data[1],uploadData.data[2]);
+        Serial.print("uploadjson : ");
+        Serial.println(uploadjson);
+        sendJsontoTCPServer(uploadjson);
+      }
+      
+      else//drop a message,fing 0xFF
+      {
+        Serial.println("can't find the end, throw away a message!");
+        unsigned int RearIndex=(p->front+MessageLen) % BuffLen;
+          
+        for(int i=0;i<3;i++)//往回找尾
+        {
+          uint8_t SearchData=p->Buff[(p->front+MessageLen-i) % BuffLen];
+          
+          if(SearchData==0xFF)
+          {
+            p->front=(RearIndex-i) % BuffLen;
+            
+            break;
+          }
+          else if(SearchData==0XFE)
+          {
+            p->front=(RearIndex-i-1) % BuffLen;
+            break;
+          }
+        }
+      }
+    }
+  }
 }
