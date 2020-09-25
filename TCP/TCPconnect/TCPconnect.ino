@@ -221,7 +221,7 @@ void doTCPClientTick()
     }
     
     //发送心跳
-    if(millis() - preHeartTick >= upheartTime)
+    if(millis() - preHeartTick >= upheartTime && debug==true)
     {
       preHeartTick = millis();
       
@@ -372,7 +372,7 @@ void sortAmessage(struct Queue *p)
 
       if(p->Buff[(p->front+MessageLen) % BuffLen ]==0xFF)//精确定位
       {
-        Serial.println("find the end of message!!"); 
+        if(debug)Serial.println("find the end of message!!"); 
         DeQueue(p,&value);
         uploadData.ID=value;
         for(int i = 0;i < MessageLen - 3; i++) 
@@ -382,10 +382,13 @@ void sortAmessage(struct Queue *p)
         }
         memcpy(&uploadData.data, DataValue, MessageLen - 3);
 
-        sprintf(uploadjson,"{ \"ID\":%u,\"Humiture\":%f,\"Light\":%f,\"Temperature\":%f}"
+        sprintf(uploadjson,"{ \"ID\":%u,\"Humiture\":%f,\"Light\":%f,\"Temperature\":%f }"
         ,uploadData.ID,uploadData.data[0],uploadData.data[1],uploadData.data[2]);
-        Serial.print("uploadjson : ");
-        Serial.println(uploadjson);
+        if(debug)
+        {
+          Serial.print("uploadjson : ");
+          Serial.println(uploadjson);
+        }
         sendJsontoTCPServer(uploadjson);
       }
       
